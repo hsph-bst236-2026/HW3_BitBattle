@@ -112,8 +112,8 @@ jobs:
                               except Exception:
                                   pass
 
-                  # Extract runtime: "Script ran in X seconds."
-                  match = re.search(r'Script ran in ([\d.]+) seconds', log_content)
+                  # Extract runtime: "Rscript calculate_Temp.R ran in X seconds." or "Script ran in X seconds."
+                  match = re.search(r'ran in ([\d.]+) seconds', log_content)
                   if match:
                       runtime = float(match.group(1))
                       runtime_data.append(runtime)
