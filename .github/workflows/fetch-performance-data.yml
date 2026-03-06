@@ -132,33 +132,18 @@ jobs:
           now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(eastern)
           timestamp = now_et.strftime("%Y-%m-%d %H:%M:%S %Z")
 
-          # Build leaderboard table
-          table = "## Performance Leaderboard\n\n"
-          table += f"*Last updated: {timestamp}*\n\n"
-          table += "| Rank | Runtime (seconds) |\n"
-          table += "|------|------------------|\n"
+          # Build the full README content from scratch
+          content = "# Homework 3 BitBattle Performance Leaderboard\n\n"
+          content += f"*Last updated: {timestamp}*\n\n"
+          content += "| Rank | Runtime (seconds) |\n"
+          content += "|------|------------------|\n"
           if runtime_data:
               for i, rt in enumerate(runtime_data, 1):
-                  table += f"| {i}    | {rt:.4f}           |\n"
+                  content += f"| {i}    | {rt:.4f}           |\n"
           else:
-              table += "| -    | No data yet      |\n"
+              content += "| -    | No data yet      |\n"
 
-          # Update README.md
-          readme_path = 'README.md'
-          if os.path.exists(readme_path):
-              with open(readme_path, 'r') as f:
-                  content = f.read()
-          else:
-              content = ""
-
-          # Replace existing leaderboard section or append
-          pattern = r'## Performance Leaderboard\n[\s\S]*?(?=\n## |\Z)'
-          if re.search(pattern, content):
-              content = re.sub(pattern, table, content)
-          else:
-              content = content.rstrip('\n') + '\n\n' + table
-
-          with open(readme_path, 'w') as f:
+          with open('README.md', 'w') as f:
               f.write(content)
 
           print(f"\nLeaderboard updated with {len(runtime_data)} entries at {timestamp}")
