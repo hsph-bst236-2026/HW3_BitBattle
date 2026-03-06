@@ -1,0 +1,173 @@
+name: Fetch Performance Data
+
+on:
+  workflow_dispatch:  # Manual trigger
+  schedule:
+    - cron: '0 */2 * * *'  # Run every two hours
+
+jobs:
+  fetch-performance:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for pushing changes
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyGithub requests pytz
+
+      - name: Fetch performance data and update leaderboard
+        env:
+          GITHUB_PAT: ${{ secrets.ORG_ACCESS_TOKEN }}
+        run: |
+          python - << 'EOF'
+          import os
+          import re
+          import json
+          import zipfile
+          import datetime
+          import requests
+          import pytz
+          from github import Github
+
+          token = os.environ.get('GITHUB_PAT', '')
+          if not token:
+              print("Error: ORG_ACCESS_TOKEN secret not set.")
+              exit(1)
+
+          g = Github(token)
+          org_name = "hsph-bst236-2026"
+
+          try:
+              org = g.get_organization(org_name)
+              print(f"Accessed organization: {org_name}")
+          except Exception as e:
+              print(f"Error accessing organization: {e}")
+              exit(1)
+
+          # Find all matching repos (homework-3-v2-<student-id>)
+          all_repos = list(org.get_repos())
+          repos = [r for r in all_repos if re.match(r'^homework-3-v2-.+', r.name)]
+          print(f"Found {len(repos)} repos matching 'homework-3-v2-*'")
+
+          headers = {
+              'Authorization': f'token {token}',
+              'Accept': 'application/vnd.github.v3+json'
+          }
+
+          runtime_data = []
+
+          for repo in repos:
+              # Use anonymized label for logging only
+              print(f"Processing a student repo...")
+
+              try:
+                  # Find the Test Calculate Temp R workflow
+                  workflows = list(repo.get_workflows())
+                  target_workflow = None
+                  for wf in workflows:
+                      if wf.name == "Test Calculate Temp R" or wf.path.endswith("test-calculate-temp-r.yml"):
+                          target_workflow = wf
+                          break
+
+                  if not target_workflow:
+                      print("  Skipping: workflow not found")
+                      continue
+
+                  # Get the most recent successful run
+                  runs = list(target_workflow.get_runs(status="success"))
+                  if not runs:
+                      print("  Skipping: no successful runs")
+                      continue
+
+                  latest_run = runs[0]
+
+                  # Download the logs zip
+                  logs_response = requests.get(
+                      latest_run.logs_url,
+                      headers=headers,
+                      allow_redirects=True
+                  )
+
+                  if logs_response.status_code != 200:
+                      print(f"  Skipping: failed to download logs (HTTP {logs_response.status_code})")
+                      continue
+
+                  # Parse log content from zip
+                  log_content = ""
+                  with zipfile.ZipFile(__import__('io').BytesIO(logs_response.content)) as zf:
+                      for info in zf.infolist():
+                          if not info.is_dir():
+                              try:
+                                  log_content += zf.read(info).decode('utf-8', errors='replace') + "\n"
+                              except Exception:
+                                  pass
+
+                  # Extract runtime: "Script ran in X seconds."
+                  match = re.search(r'Script ran in ([\d.]+) seconds', log_content)
+                  if match:
+                      runtime = float(match.group(1))
+                      runtime_data.append(runtime)
+                      print(f"  Runtime: {runtime:.4f}s")
+                  else:
+                      print("  Skipping: runtime not found in logs")
+
+              except Exception as e:
+                  print(f"  Error: {e}")
+
+          # Sort fastest to slowest
+          runtime_data.sort()
+
+          # Timestamp in Eastern Time
+          eastern = pytz.timezone('US/Eastern')
+          now_et = datetime.datetime.now(datetime.timezone.utc).astimezone(eastern)
+          timestamp = now_et.strftime("%Y-%m-%d %H:%M:%S %Z")
+
+          # Build leaderboard table
+          table = "## Performance Leaderboard\n\n"
+          table += f"*Last updated: {timestamp}*\n\n"
+          table += "| Rank | Runtime (seconds) |\n"
+          table += "|------|------------------|\n"
+          if runtime_data:
+              for i, rt in enumerate(runtime_data, 1):
+                  table += f"| {i}    | {rt:.4f}           |\n"
+          else:
+              table += "| -    | No data yet      |\n"
+
+          # Update README.md
+          readme_path = 'README.md'
+          if os.path.exists(readme_path):
+              with open(readme_path, 'r') as f:
+                  content = f.read()
+          else:
+              content = ""
+
+          # Replace existing leaderboard section or append
+          pattern = r'## Performance Leaderboard\n[\s\S]*?(?=\n## |\Z)'
+          if re.search(pattern, content):
+              content = re.sub(pattern, table, content)
+          else:
+              content = content.rstrip('\n') + '\n\n' + table
+
+          with open(readme_path, 'w') as f:
+              f.write(content)
+
+          print(f"\nLeaderboard updated with {len(runtime_data)} entries at {timestamp}")
+          EOF
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git diff --cached --quiet || git commit -m "Update performance leaderboard [skip ci]"
+          git push
