@@ -1,9 +1,9 @@
 # Homework 3 BitBattle Performance Leaderboard
 
-*Last updated: 2026-03-07 11:37:55 EST*
+*Last updated: 2026-03-07 13:46:11 EST*
 
 | Rank | Runtime (seconds) |
 |------|------------------|
 | 1    | 67.1927           |
-| 2    | 122.7324           |
+| 2    | 121.6498           |
 | 3    | 125.1984           |
