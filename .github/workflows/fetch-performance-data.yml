@@ -32,7 +32,6 @@ jobs:
           python - << 'EOF'
           import os
           import re
-          import json
           import zipfile
           import datetime
           import requests
@@ -64,11 +63,12 @@ jobs:
               'Accept': 'application/vnd.github.v3+json'
           }
 
-          runtime_data = []
+          entries = []  # (runtime, team_name); team_name = repo slug after homework-3-v2-
 
           for repo in repos:
-              # Use anonymized label for logging only
-              print(f"Processing a student repo...")
+              m_team = re.match(r"^homework-3-v2-(.+)$", repo.name)
+              team_name = m_team.group(1) if m_team else repo.name
+              print(f"Processing repo team slug: {team_name}")
 
               try:
                   # Find the Test Calculate Temp R workflow
@@ -116,7 +116,7 @@ jobs:
                   match = re.search(r'ran in ([\d.]+) seconds', log_content)
                   if match:
                       runtime = float(match.group(1))
-                      runtime_data.append(runtime)
+                      entries.append((runtime, team_name))
                       print(f"  Runtime: {runtime:.4f}s")
                   else:
                       print("  Skipping: runtime not found in logs")
@@ -124,8 +124,8 @@ jobs:
               except Exception as e:
                   print(f"  Error: {e}")
 
-          # Sort fastest to slowest
-          runtime_data.sort()
+          # Sort fastest to slowest (stable order for ties)
+          entries.sort(key=lambda x: x[0])
 
           # Timestamp in Eastern Time
           eastern = pytz.timezone('US/Eastern')
@@ -135,18 +135,19 @@ jobs:
           # Build the full README content from scratch
           content = "# Homework 3 BitBattle Performance Leaderboard\n\n"
           content += f"*Last updated: {timestamp}*\n\n"
-          content += "| Rank | Runtime (seconds) |\n"
-          content += "|------|------------------|\n"
-          if runtime_data:
-              for i, rt in enumerate(runtime_data, 1):
-                  content += f"| {i}    | {rt:.4f}           |\n"
+          content += "| Rank | Team name | Runtime (seconds) |\n"
+          content += "|------|-----------|------------------|\n"
+          if entries:
+              for i, (rt, name) in enumerate(entries, 1):
+                  safe_name = name.replace("|", "\\|")
+                  content += f"| {i} | {safe_name} | {rt:.4f} |\n"
           else:
-              content += "| -    | No data yet      |\n"
+              content += "| - | — | No data yet |\n"
 
           with open('README.md', 'w') as f:
               f.write(content)
 
-          print(f"\nLeaderboard updated with {len(runtime_data)} entries at {timestamp}")
+          print(f"\nLeaderboard updated with {len(entries)} entries at {timestamp}")
           EOF
 
       - name: Commit and push changes
